@@ -1,0 +1,9 @@
+portainer:
+    image: portainer/portainer
+    hostname: portainer
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /D/.docker/portainer/data:/data
+    ports:
+        - "19000:9000"
+    restart: always
