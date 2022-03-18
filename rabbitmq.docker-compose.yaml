@@ -1,0 +1,90 @@
+version: '3.7'
+
+services:
+    node1:
+        image: rabbitmq:3.7.8-management
+        environment:
+            - RABBITMQ_ERLANG_COOKIE=m1D31LcPo7
+            - RABBITMQ_NODENAME=rabbitmq@node1
+        volumes:
+            - data_node1:/var/lib/rabbitmq/mnesia/
+        ports:
+            - "5672:5672"
+            - "15672:15672"
+        networks:
+            - rabbitmq
+        healthcheck:
+            test: rabbitmq-diagnostics -q ping
+            interval: 5s
+            timeout: 10s
+
+    node2:
+        image: rabbitmq:3.7.8-management
+        environment:
+            - RABBITMQ_ERLANG_COOKIE=m1D31LcPo7
+            - RABBITMQ_NODENAME=rabbitmq@node2
+        links:
+            - node1
+        volumes:
+            - data_node2:/var/lib/rabbitmq/mnesia/
+        ports:
+            - "5673:5672"
+        networks:
+            - rabbitmq
+        healthcheck:
+            test: rabbitmq-diagnostics -q ping
+            interval: 5s
+            timeout: 10s
+
+    node3:
+        image: rabbitmq:3.7.8-management
+        environment:
+            - RABBITMQ_ERLANG_COOKIE=m1D31LcPo7
+            - RABBITMQ_NODENAME=rabbitmq@node3
+        links:
+            - node1
+        volumes:
+            - data_node3:/var/lib/rabbitmq/mnesia/
+        ports:
+            - "5674:5672"
+        networks:
+            - rabbitmq
+        healthcheck:
+            test: rabbitmq-diagnostics -q ping
+            interval: 5s
+            timeout: 10s
+
+    setup:
+        image: rabbitmq:3.7.8-management
+        init: true
+        environment:
+            - RABBITMQ_ERLANG_COOKIE=m1D31LcPo7
+            - RABBITMQ_NODENAME=rabbitmq@setup
+        networks:
+            - rabbitmq
+        depends_on:
+            node1:
+                condition: service_healthy
+            node2:
+                condition: service_healthy
+            node3:
+                condition: service_healthy
+        command:
+            - /bin/bash
+            - -c
+            - |
+                rabbitmqctl -n rabbitmq@node2 stop_app
+                rabbitmqctl -n rabbitmq@node2 join_cluster rabbitmq@node1
+                rabbitmqctl -n rabbitmq@node2 start_app
+                rabbitmqctl -n rabbitmq@node3 stop_app
+                rabbitmqctl -n rabbitmq@node3 join_cluster rabbitmq@node1
+                rabbitmqctl -n rabbitmq@node3 start_app
+                rabbitmqctl -n rabbitmq@node1 set_policy HA ".*" '{"ha-mode": "all"}'
+
+networks:
+    rabbitmq:
+
+volumes:
+    data_node1:
+    data_node2:
+    data_node3:
