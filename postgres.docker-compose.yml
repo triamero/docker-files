@@ -1,0 +1,63 @@
+version: '3.7'
+
+services:
+    node1:
+        image: postgres:16.1
+        container_name: postgres-node1
+        environment:
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=postgres
+            - POSTGRES_DB=postgres
+            - POSTGRES_INITDB_ARGS="--auth-host=md5"
+        volumes:
+            - data_node1:/var/lib/postgresql/data
+        ports:
+            - "5432:5432"
+        networks:
+            - postgres
+        healthcheck:
+            test: ["CMD", "pg_isready", "-U", "postgres"]
+            interval: 5s
+            timeout: 10s
+        command:
+            - /bin/sh
+            - -c
+            - |
+                echo "CREATE ROLE replicator LOGIN REPLICATION PASSWORD 'postgres'" >> /docker-entrypoint-initdb.d/replicator.sql
+                echo "CREATE TABLE hba(lines text); COPY hba FROM '$${PGDATA}/pg_hba.conf'; insert into hba (lines) values ('host replication all samenet md5'); COPY hba TO '$${PGDATA}/pg_hba.conf'; select pg_reload_conf(); drop table hba;" >> /docker-entrypoint-initdb.d/hba.sql
+                /usr/local/bin/docker-entrypoint.sh postgres
+            
+    node2:
+        image: postgres:16.1
+        container_name: postgres-node2
+        environment:
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=postgres
+            - POSTGRES_DB=postgres
+            - CONNECTION_MASTER=postgres://replicator:postgres@postgres-node1:5432
+        depends_on:
+            node1:
+                condition: service_healthy
+        volumes:
+            - data_node2:/var/lib/postgresql/data
+        ports:
+            - "5433:5432"
+        networks:
+            - postgres
+        healthcheck:
+            test: ["CMD", "pg_isready", "-U", "postgres"]
+            interval: 5s
+            timeout: 10s
+        command:
+            - /bin/sh
+            - -c
+            - |
+                pg_basebackup --dbname=$${CONNECTION_MASTER} --pgdata=$${PGDATA} --wal-method=stream --write-recovery-conf
+                /usr/local/bin/docker-entrypoint.sh postgres
+
+networks:
+    postgres:
+
+volumes:
+    data_node1:
+    data_node2:
